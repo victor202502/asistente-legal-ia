@@ -1,0 +1,30 @@
+# Entornos Virtuales
+venv/
+*.venv
+.venv
+
+# Archivos de caché de Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Archivos de configuración del editor
+.vscode/
+.idea/
+
+# Archivos de caché de librerías
+.cache/
+.pytest_cache/
+.mypy_cache/
+
+# Base de datos local de ChromaDB
+chroma_db/
+
+# Archivos de entorno con secretos
+.env
+*.env.*
+
+# Archivos de sistema operativo
+.DS_Store
+Thumbs.db
