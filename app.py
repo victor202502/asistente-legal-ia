@@ -3,22 +3,15 @@ import streamlit as st
 import os
 from dotenv import load_dotenv
 
-# --- Importaciones de LangChain (para las versiones estables que instalamos) ---
 from langchain_community.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import Chroma
 from langchain.chains import RetrievalQA
-
-# Para estas versiones, Embeddings y LLM viven en 'langchain_community'
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.llms import HuggingFaceHub
 
-# --- Carga de la API Key de Hugging Face ---
+# Carga la clave de API (aunque no la usemos para el despliegue inicial, es buena práctica)
 load_dotenv() 
-
-if not os.getenv("HUGGINGFACEHUB_API_TOKEN"):
-    st.error("¡Error! La API key de Hugging Face no se ha encontrado. Asegúrate de tener un archivo .env con HUGGINGFACEHUB_API_TOKEN.")
-    st.stop()
 
 # --- Función para configurar la cadena de QA (cacheada para eficiencia) ---
 @st.cache_resource
@@ -34,13 +27,13 @@ def setup_qa_chain():
     # 3. Crear embeddings
     embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
 
-    # 4. Crear la base de datos vectorial
+    # 4. Crear la base de datos vectorial EN MEMORIA (no se guarda en disco)
     vectorstore = Chroma.from_documents(chunks, embeddings)
 
-    # 5. Configurar el LLM (el modelo de lenguaje)
+    # 5. Configurar el LLM
     llm = HuggingFaceHub(
-         repo_id="google-t5/t5-small", # ¡NUESTRO MODELO FIABLE!
-    model_kwargs={"temperature": 0.2, "max_new_tokens": 512}
+        repo_id="google-t5/t5-small",
+        model_kwargs={"temperature": 0.2, "max_new_tokens": 512}
     )
 
     # 6. Crear la cadena de QA
@@ -52,9 +45,9 @@ def setup_qa_chain():
     )
     return qa_chain
 
-# --- Interfaz de Usuario con Streamlit ---
-st.set_page_config(page_title="Rechts-Assistent (Beta)", layout="wide")
-st.title("🤖 Juristischer Informations-Assistent (Beta)")
+# --- Interfaz de Usuario ---
+st.set_page_config(page_title="Rechts-Assistent (Demo)", layout="wide")
+st.title("🤖 Juristischer Informations-Assistent (Demo-Version)")
 st.caption("Basierend auf dem deutschen Mietrecht (BGB §§ 535-580a)")
 
 st.warning("""
@@ -63,8 +56,9 @@ Die generierten Informationen können ungenau oder veraltet sein. Konsultieren S
 """, icon="⚠️")
 
 try:
-    qa_chain = setup_qa_chain()
-    st.success("Die Wissensdatenbank wurde erfolgreich geladen!")
+    with st.spinner("Lade Wissensdatenbank... Dies geschieht bei jedem Start neu (Demo-Version)."):
+        qa_chain = setup_qa_chain()
+    st.success("Die Wissensdatenbank wurde für diese Sitzung geladen!")
 except Exception as e:
     st.error(f"Ein Fehler ist beim Laden der Wissensdatenbank aufgetreten: {e}")
     st.stop()
@@ -72,18 +66,15 @@ except Exception as e:
 user_question = st.text_input("Stellen Sie hier Ihre Frage zum Mietrecht:", placeholder="z.B. Wie lange ist die Kündigungsfrist für meine Wohnung?")
 
 if user_question:
-    with st.spinner("Suche in der Gesetzesdatenbank und generiere eine Antwort..."):
+    with st.spinner("Suche in der Datenbank und generiere eine Antwort..."):
         try:
-            # Con estas versiones, es más seguro llamar a la cadena así:
             result = qa_chain({"query": user_question})
-            
             st.subheader("Antwort:")
             st.write(result["result"])
 
-            with st.expander("Quellen anzeigen (verwendete Textabschnitte)"):
+            with st.expander("Quellen anzeigen"):
                 for doc in result["source_documents"]:
                     st.info(f"Quelle (Seite {doc.metadata.get('page', 'N/A')}):")
                     st.text(doc.page_content)
-
         except Exception as e:
-            st.error(f"Entschuldigung, bei der Beantwortung Ihrer Frage ist ein Fehler aufgetreten: {e}")
+            st.error(f"Ein Fehler ist aufgetreten: {e}")
