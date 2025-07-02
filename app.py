@@ -1,89 +1,93 @@
-# -*- coding: utf-8 -*-
+# app.py - Versión optimizada para poca RAM
 import streamlit as st
 import os
 from dotenv import load_dotenv
 
-# Nuevas importaciones para Pinecone
-from pinecone import Pinecone as PineconeClient
-from langchain_community.vectorstores import Pinecone as LangchainPinecone
-
-from langchain_community.document_loaders import PyPDFLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_community.llms import HuggingFaceHub
-from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain.chains import RetrievalQA
-
-# Carga las variables de entorno
+# --- Carga de variables de entorno (esto es ligero) ---
 load_dotenv()
 
-# --- Configuración de Clientes (Pinecone y Hugging Face) ---
-PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
-HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACEHUB_API_TOKEN")
-
-if not all([PINECONE_API_KEY, HUGGINGFACE_TOKEN]):
-    st.error("¡Error! Faltan las claves de API. Revisa PINECONE_API_KEY y HUGGINGFACEHUB_API_TOKEN.")
-    st.stop()
-    
-# Inicializa el cliente de Pinecone (versión Serverless)
-pinecone = PineconeClient(api_key=PINECONE_API_KEY)
-
-# Nombre de nuestro índice en Pinecone
-INDEX_NAME = "asistente-legal-ia"
-
-embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-
-# --- Función principal de la App ---
+# --- Funciones de configuración (las importaciones pesadas están DENTRO) ---
 @st.cache_resource
-def setup_qa_chain():
-    # Conectamos con nuestro índice existente en Pinecone
-    vector_store = LangchainPinecone.from_existing_index(INDEX_NAME, embeddings)
+def setup_connections_and_embeddings():
+    """Carga las librerías pesadas y establece las conexiones una sola vez."""
+    # Solo importamos cuando se llama a la función
+    from langchain_community.embeddings import HuggingFaceEmbeddings
+    from langchain_pinecone import Pinecone as LangchainPinecone
+
+    PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
+    if not PINECONE_API_KEY:
+        st.error("Error: PINECONE_API_KEY no encontrada.")
+        st.stop()
     
+    # Esta es la parte que más memoria consume al inicio
+    st.write("Cargando modelo de embeddings...")
+    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+    
+    st.write("Conectando a Pinecone...")
+    vector_store = LangchainPinecone.from_existing_index("asistente-legal-ia", embeddings)
+    st.write("Conexión establecida.")
+    
+    return vector_store
+
+@st.cache_resource
+def setup_qa_chain(_vector_store): # Pasamos el vector_store como argumento
+    """Carga el LLM y crea la cadena de QA."""
+    # Solo importamos cuando se llama a la función
+    from langchain_community.llms import HuggingFaceHub
+    from langchain.chains import RetrievalQA
+    from langchain.prompts import PromptTemplate
+
+    HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACEHUB_API_TOKEN")
+    if not HUGGINGFACE_TOKEN:
+        st.error("Error: HUGGINGFACEHUB_API_TOKEN no encontrada.")
+        st.stop()
+
     llm = HuggingFaceHub(
-        repo_id="google-t5/t5-base",
+        repo_id="google-t5/t5-base", # Usamos t5-base que es más ligero que t5-small
         model_kwargs={"temperature": 0.2, "max_new_tokens": 512}
     )
+
+    prompt_template = """
+    Benutze den folgenden Kontext, um die Frage am Ende zu beantworten. Antworte nur auf Deutsch.
+    Wenn du die Antwort im Kontext nicht findest, sage: "Ich habe keine Informationen dazu in meiner Wissensdatenbank." Erfinde nichts.
+
+    Kontext:
+    {context}
+
+    Frage: {question}
+    Hilfreiche Antwort auf Deutsch:
+    """
+    PROMPT = PromptTemplate(template=prompt_template, input_variables=["context", "question"])
+
     qa_chain = RetrievalQA.from_chain_type(
         llm=llm,
         chain_type="stuff",
-        retriever=vector_store.as_retriever(),
-        return_source_documents=True
+        retriever=_vector_store.as_retriever(),
+        return_source_documents=True,
+        chain_type_kwargs={"prompt": PROMPT}
     )
     return qa_chain
 
-# --- Interfaz de Usuario ---
+# --- Interfaz de Usuario (El flujo principal) ---
 st.set_page_config(page_title="Rechts-Assistent (Live)", layout="wide")
-st.title("🤖 Juristischer Informations-Assistent (Live Version)")
-st.caption("Basierend auf dem deutschen Mietrecht (BGB §§ 535-580a) | Database: Pinecone Serverless")
+st.title("🤖 Juristischer Informations-Assistent")
+st.caption("Basierend auf dem deutschen Mietrecht | Database: Pinecone")
 
 st.warning("""
-**Haftungsausschluss (Disclaimer):** Dies ist ein akademisches Projekt und bietet keine Rechtsberatung. 
-Die generierten Informationen können ungenau oder veraltet sein. Konsultieren Sie immer einen qualifizierten Anwalt.
+**Haftungsausschluss (Disclaimer):** Dies ist ein akademisches Projekt...
 """, icon="⚠️")
 
-# Botón para cargar el documento (SOLO SE HACE UNA VEZ)
-if st.button("Dokumentenbasis erstmalig aufbauen (nur einmal klicken)"):
-    with st.spinner("Lade und verarbeite PDF... Dies kann einige Minuten dauern. Bitte warten."):
-        try:
-            loader = PyPDFLoader("ley.pdf") # ASEGÚRATE QUE EL NOMBRE ES CORRECTO
-            documents = loader.load()
-            text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
-            docs = text_splitter.split_documents(documents)
-            
-            # Usamos 'from_documents' para crear y poblar el índice por primera vez
-            LangchainPinecone.from_documents(docs, embeddings, index_name=INDEX_NAME)
-            st.success("Die Wissensdatenbank wurde erfolgreich in Pinecone erstellt!")
-        except Exception as e:
-            st.error(f"Fehler beim Aufbau der Datenbank: {e}")
+# El flujo de carga ahora es visible para el usuario
+with st.spinner("Inicializando la conexión con la base de conocimiento..."):
+    try:
+        vector_store = setup_connections_and_embeddings()
+        qa_chain = setup_qa_chain(vector_store)
+        st.success("Erfolgreich mit der Wissensdatenbank verbunden!")
+    except Exception as e:
+        st.error(f"Verbindung zur Wissensdatenbank fehlgeschlagen: {e}")
+        st.stop()
 
-try:
-    qa_chain = setup_qa_chain()
-    st.success("Erfolgreich mit der Pinecone-Wissensdatenbank verbunden!")
-except Exception as e:
-    st.error(f"Verbindung zur Pinecone-Datenbank fehlgeschlagen: {e}. Haben Sie die Dokumentenbasis bereits aufgebaut?")
-    st.stop()
-
-
-user_question = st.text_input("Stellen Sie hier Ihre Frage zum Mietrecht:", placeholder="z.B. Wie lange ist die Kündigungsfrist für meine Wohnung?")
+user_question = st.text_input("Stellen Sie hier Ihre Frage zum Mietrecht:", placeholder="z.B. Wie lange ist die Kündigungsfrist?")
 
 if user_question:
     with st.spinner("Suche in der Cloud-Datenbank und generiere eine Antwort..."):
