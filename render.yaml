@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: asistente-legal-ia
+    env: python
+    plan: free
+    pythonVersion: '3.11'  # <-- ¡ESTA ES LA LÍNEA MÁGICA!
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "streamlit run app.py"
+    envVars:
+      - key: HUGGINGFACEHUB_API_TOKEN
+        fromSecret: true # Le diremos a Render que la busque en los secretos
+      - key: PINECONE_API_KEY
+        fromSecret: true
+      # Si usaras el entorno de Pinecone, también iría aquí.
+      # - key: PINECONE_ENVIRONMENT
+      #   fromSecret: true
