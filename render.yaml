@@ -3,11 +3,13 @@ services:
     name: asistente-legal-ia
     env: python
     plan: free
-    pythonVersion: "3.11"
     buildCommand: "pip install -r requirements.txt"
     startCommand: "streamlit run app.py"
     healthCheckPath: /healthz
     envVars:
+      - key: PYTHON_VERSION
+        value: "3.11"
+      
       - key: HUGGINGFACEHUB_API_TOKEN
         sync: false
       - key: PINECONE_API_KEY
