@@ -2,13 +2,21 @@ services:
   - type: web
     name: asistente-legal-ia
     env: python
-    plan: free
-    pythonVersion: '3.12.8'  
+    plan: free # Asegúrate de que tu cuenta tiene acceso al plan gratuito
+    
+    # Especificamos la versión de Python. 3.11 es una apuesta muy segura
+    pythonVersion: "3.11"
+    
+    # Comandos de construcción e inicio
     buildCommand: "pip install -r requirements.txt"
     startCommand: "streamlit run app.py"
+    
+    # Ruta de comprobación de estado que a Render le gusta
+    healthCheckPath: /healthz
+    
+    # Declaración de las variables de entorno/secretos
     envVars:
       - key: HUGGINGFACEHUB_API_TOKEN
-        fromSecret: true 
+        sync: false # Le decimos a Render que no espere que esta clave esté en el YAML
       - key: PINECONE_API_KEY
-        fromSecret: true
-    
+        sync: false # Igual para Pinecone
