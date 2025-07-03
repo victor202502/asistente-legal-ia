@@ -43,17 +43,15 @@ def setup_qa_chain(_vector_store): # Pasamos el vector_store como argumento
         st.stop()
 
     llm = HuggingFaceHub(
-        repo_id="google-t5/t5-base", # Usamos t5-base que es más ligero que t5-small
+        repo_id="google-t5/t5-small", # Usamos t5-base que es más ligero que t5-small
         model_kwargs={"temperature": 0.2, "max_new_tokens": 512}
     )
 
     prompt_template = """
     Benutze den folgenden Kontext, um die Frage am Ende zu beantworten. Antworte nur auf Deutsch.
     Wenn du die Antwort im Kontext nicht findest, sage: "Ich habe keine Informationen dazu in meiner Wissensdatenbank." Erfinde nichts.
-
     Kontext:
     {context}
-
     Frage: {question}
     Hilfreiche Antwort auf Deutsch:
     """
